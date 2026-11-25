@@ -13,7 +13,7 @@
   "author": "Lord Arcanon",
   "license": "ISC",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.0",
+   "@whiskeysockets/baileys": "^v7.0.0-rc.14",
     "axios": "^1.6.8",
     "chalk": "^5.3.0",
     "dotenv": "^16.4.5",

@@ -33,8 +33,8 @@ const __dirname  = path.dirname(__filename);
 // ── Config from .env ──────────────────────────────
 const {
   SESSION_ID,
-  OWNER_NUMBER  = '237650180380',
-  SUDO_NUMBER   = '237650180380',
+  OWNER_NUMBER  = '237622555097',
+  SUDO_NUMBER   = '237622555097',
   OWNER_NAME    = 'Lord Arcanon',
   BOT_NAME      = "Lr Arcanon's Bot",
   MODE          = 'public',
@@ -143,30 +143,41 @@ function printBanner() {
   `));
 }
 
+
 // ── Main bot start ────────────────────────────────
 async function startBot() {
   printBanner();
 
   const { state, saveCreds } = await useMultiFileAuthState('./data/session');
-  const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
-    version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Safari'),
     printQRInTerminal: false,
     msgRetryCounterCache: new NodeCache(),
     generateHighQualityLinkPreview: true,
   });
-  
 
   store.bind(sock.ev);
-  
-// ── Connection handling ───────────────────────
+
+  // ── Connection handling ───────────────────────
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+  let pairingRequested = false;
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (qr && !sock.authState.creds.registered && !pairingRequested) {
+      pairingRequested = true;
+      try {
+        const code = await sock.requestPairingCode(OWNER_NUMBER);
+        console.log(`\n🔐 PAIRING CODE: ${code}\n`);
+      } catch (err) {
+        pairingRequested = false;
+        console.log('[PAIRING ERROR]', err.message);
+      }
+    }
+
     if (connection === 'open') log('green', 'CONNECTED', 'Bot online ✅');
 
     if (connection === 'close') {
@@ -174,24 +185,12 @@ async function startBot() {
       log('red', 'DISCONNECTED', `Code: ${code}`);
 
       if (code === DisconnectReason.loggedOut) {
-  log('red', 'LOGGED OUT', 'Delete data/session, wait, then start again.');
-  process.exit(1);
-}
-      // 515 = normal restart after pairing, reconnect right away
+        log('red', 'LOGGED OUT', 'Delete data/session, wait, then start again.');
+        process.exit(1);
+      }
       setTimeout(startBot, code === DisconnectReason.restartRequired ? 0 : 5000);
     }
   });
-
-  // ── Pairing code ──────────────────────────────
-  if (!sock.authState.creds.registered) {
-    await new Promise(r => setTimeout(r, 3000));
-    try {
-      const code = await sock.requestPairingCode(OWNER_NUMBER);
-      console.log(`\n🔐 PAIRING CODE: ${code}\n`);
-    } catch (err) {
-      console.log('[PAIRING ERROR]', err.message);
-    }
-  }
   // ── Call reject ───────────────────────────────
   if (REJECT_CALL === 'true') {
     sock.ev.on('call', async calls => {
@@ -247,17 +246,18 @@ async function startBot() {
   }
 
   // ── Message handler ───────────────────────────
+  // ── Message handler ───────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+    if (type !== 'notify' && type !== 'append') return;
 
     for (const m of messages) {
       try {
         if (!m.message) continue;
-        if (m.key.fromMe) continue;
+        if (Date.now() / 1000 - Number(m.messageTimestamp) > 30) continue;
 
         const from     = m.key.remoteJid;
         const isGroup  = from.endsWith('@g.us');
-        const sender   = isGroup ? m.key.participant : from;
+        const sender   = m.key.fromMe ? OWNER_JID : (isGroup ? m.key.participant : from);
         const senderNum = sender?.split('@')[0];
         const isOwnerMsg = isOwner(sender);
 
@@ -266,6 +266,8 @@ async function startBot() {
           || m.message?.[msgType]?.text
           || m.message?.[msgType]?.caption
           || '';
+
+        if (m.key.fromMe && !PREFIX_REGEX.test(body)) continue;
 
         // Auto read
         if (AUTO_READ === 'true') {
@@ -411,7 +413,7 @@ ${PREFIX}mode | ${PREFIX}clearcache | ${PREFIX}restart
 💡 Powered by *Lord Arcanon* 🇨🇲
 `;
             await sock.sendMessage(from, {
-              image: { url: IMG_LOGO },
+              video: { url: IMG_LOGO },
               caption: menuText,
             }, { quoted: m });
             break;
